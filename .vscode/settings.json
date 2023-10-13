@@ -7,4 +7,9 @@
     },
     "prettier.singleQuote": true,
     "prettier.tabWidth": 4,
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "python.formatting.provider": "none",
+    "dbt.queryLimit": 500,
 }
