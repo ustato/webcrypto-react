@@ -9,7 +9,11 @@ fmt: ## format all TypeScript file
 keys: ## create EC(NIST P-256,prime256v1) key-pair
 	openssl ecparam -name prime256v1 -genkey -out prime256v1_private_key.pem
 	openssl ec -in prime256v1_private_key.pem -pubout -out prime256v1_public_key.pem
-	npx eckles prime256v1_public_key.pem > remote_public_key.jwk
+	cat prime256v1_public_key.pem | pbcopy
+
+.PHONY: jwk2pem
+jwk2pem: ## jwk to pem from browser's public key
+	npx eckles browser_public_key.jwk > browser_public_key.pem
 
 .PHONY: help
 help: ## show this help
