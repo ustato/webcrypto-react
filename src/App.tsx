@@ -8,27 +8,11 @@ function EncodeBase64URL(data: Uint8Array): string {
     for (let i = 0; i < data.length; i++)
         output += String.fromCharCode(data[i]);
 
-    return btoa(output.replace(/\+/g, '-').replace(/\//g, '_')).replace(
-        /=+$/,
-        '',
-    );
-}
-
-function FormatArrayBufferToBase64(buffer: ArrayBuffer): string {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+    return btoa(output.replace(/\+/g, '-').replace(/\//g, '_'));
 }
 
 function stob(s: string): Uint8Array {
     return Uint8Array.from(s, (c) => c.charCodeAt(0));
-}
-
-function btos(b: ArrayBuffer) {
-    return String.fromCharCode(...new Uint8Array(b));
 }
 
 function ConvertPublicKeyPemToJwk(publicKeyPem: string): Uint8Array {
@@ -73,21 +57,12 @@ async function EncryptEllipticPCurve(
 
     // 公開鍵をエクスポート
     const exportedPublicKey = await window.crypto.subtle.exportKey(
-        'raw',
+        'jwk',
         keyPair.publicKey,
     );
 
-    // PEM形式に変換
-    let publicKeyPEMContents = btoa(btos(exportedPublicKey));
-    let publicKeyPEM = '-----BEGIN PUBLIC KEY-----\n';
-    while (publicKeyPEMContents.length > 0) {
-        publicKeyPEM += publicKeyPEMContents.substring(0, 64) + '\n';
-        publicKeyPEMContents = publicKeyPEMContents.substring(64);
-    }
-    publicKeyPEM += '-----END PUBLIC KEY-----\n';
-
-    // 公開鍵をJWKとしてエクスポート;
-    const importedPublicKey = await crypto.subtle.importKey(
+    // 外部の公開鍵をインポート
+    const importedPublicKey = await window.crypto.subtle.importKey(
         'spki',
         ConvertPublicKeyPemToJwk(remotePublicKeyPem),
         {
@@ -99,7 +74,7 @@ async function EncryptEllipticPCurve(
     );
 
     // 共有鍵を計算
-    const sharedKey = await crypto.subtle.deriveKey(
+    const sharedKey = await window.crypto.subtle.deriveKey(
         {
             name: 'ECDH',
             public: importedPublicKey,
@@ -114,7 +89,7 @@ async function EncryptEllipticPCurve(
     );
 
     // 共有鍵(sharedKey)を使用して暗号化
-    const data = await crypto.subtle.encrypt(
+    const data = await window.crypto.subtle.encrypt(
         {
             name: 'AES-GCM',
             iv,
@@ -129,22 +104,18 @@ async function EncryptEllipticPCurve(
     ret = {
         iv: EncodeBase64URL(new Uint8Array(iv)),
         enctyptedData: EncodeBase64URL(new Uint8Array(data)),
-        publicKeyPEM,
+        jwk: JSON.stringify(exportedPublicKey),
     };
 
     return ret as { [key: string]: string };
 }
 
-function AppEnctyption(message: string) {
-    const remotePublicKeyPem: string = `-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENI1qJibR0PlaOqcR1AdB7+rcppom
-pnA1jyNEZCFsm0Fz/p54w0ipTwYUW4UtCt7b69a0jzirWEcuRkjjK1kTSg==
------END PUBLIC KEY-----`;
+function AppEnctyption(message: string, remotePublicKeyPem: string) {
     EncryptEllipticPCurve(message, remotePublicKeyPem)
         .then((result) => {
             // 結果を取得して処理
             console.log(result);
-            alert(JSON.stringify(result));
+            alert('Encrypted!\n' + JSON.stringify(result));
         })
         .catch(() => {
             // 結果を取得して処理
@@ -158,39 +129,48 @@ function App() {
 
     return (
         <>
-            <div>
-                <a href="https://vitejs.dev" target="_blank">
-                    <img src={viteLogo} className="logo" alt="Vite logo" />
-                </a>
-                <a href="https://react.dev" target="_blank">
-                    <img
-                        src={reactLogo}
-                        className="logo react"
-                        alt="React logo"
-                    />
-                </a>
-            </div>
-            <h1>Vite + React</h1>
             <div className="card">
-                <p>
-                    秘密情報：
-                    <input
-                        value={message}
-                        onChange={(event) => setMessage(event.target.value)}
-                    />
-                </p>
-                <p>
-                    <button onClick={() => AppEnctyption(message)}>
-                        暗号化
-                    </button>
-                </p>
-                <p>
-                    Edit <code>src/App.tsx</code> and save to test HMR
-                </p>
+                <ol>
+                    <li>`make keys` を実行する</li>
+                    <li>
+                        クリップボードを貼り付ける：
+                        <input
+                            value={publicKey}
+                            onChange={(event) =>
+                                setPublicKey(event.target.value)
+                            }
+                        />
+                    </li>
+                    <li>
+                        秘密情報を入力する：
+                        <input
+                            value={message}
+                            onChange={(event) => setMessage(event.target.value)}
+                        />
+                    </li>
+                    <li>
+                        <button
+                            onClick={() => AppEnctyption(message, publicKey)}
+                        >
+                            暗号化
+                        </button>
+                    </li>
+                    <li>
+                        復号
+                        <ol>
+                            <li>
+                                開発者コンソールの jwk を browser_public_key.jwk
+                                に保存
+                            </li>
+                            <li>`make jwk2pem` を実行する</li>
+                            <li>
+                                python utils/decrypt.py "enctyptedData" "iv"
+                                を実行
+                            </li>
+                        </ol>
+                    </li>
+                </ol>
             </div>
-            <p className="read-the-docs">
-                Click on the Vite and React logos to learn more
-            </p>
         </>
     );
 }
