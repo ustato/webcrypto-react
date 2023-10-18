@@ -48,22 +48,14 @@ async function ConvertPublicKeyJwkToPem(key: CryptoKey): Promise<string> {
     return pem;
 }
 
-async function EncryptEllipticPCurve(
-    message: string,
+async function GenerateEllipticCurveP256Keys(
     remotePublicKeyPem: string,
-): Promise<{ [key: string]: string }> {
-    // console.log(`Start encrypt message: ${message}`);
-    // console.log(`public key: ${remotePublicKeyPem}`);
-
-    const encoder = new TextEncoder();
-    const input = encoder.encode(message);
-
-    let keyPair: CryptoKeyPair;
-    let iv = crypto.getRandomValues(new Uint8Array(12));
-    let ret: { [key: string]: string } | undefined;
-
+): Promise<{
+    sharedKey: CryptoKey;
+    exportedPublicKey: CryptoKey;
+}> {
     // 鍵ペアを生成
-    keyPair = await crypto.subtle.generateKey(
+    const keyPair = await crypto.subtle.generateKey(
         {
             name: 'ECDH',
             namedCurve: 'P-256',
@@ -71,9 +63,6 @@ async function EncryptEllipticPCurve(
         false,
         ['deriveKey', 'deriveBits'],
     );
-
-    // 公開鍵をエクスポート
-    const exportedPublicKey = await ConvertPublicKeyJwkToPem(keyPair.publicKey);
 
     // 外部の公開鍵をインポート
     const importedPublicKey = await crypto.subtle.importKey(
@@ -102,7 +91,29 @@ async function EncryptEllipticPCurve(
         ['encrypt', 'decrypt'],
     );
 
-    // 共有鍵(sharedKey)を使用して暗号化
+    return {
+        sharedKey,
+        exportedPublicKey: keyPair.publicKey,
+    };
+}
+
+async function EncryptAesGcm256(
+    message: string,
+    remotePublicKeyPem: string,
+): Promise<{
+    enctyptedData: string;
+    iv: string;
+    pem: string;
+}> {
+    const encoder = new TextEncoder();
+    const input = encoder.encode(message);
+
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+
+    // 共通鍵と公開鍵を生成
+    const keys = await GenerateEllipticCurveP256Keys(remotePublicKeyPem);
+
+    // 共有鍵を使用して暗号化
     const data = await crypto.subtle.encrypt(
         {
             name: 'AES-GCM',
@@ -110,29 +121,29 @@ async function EncryptEllipticPCurve(
             length: 256,
             tagLength: 128,
         },
-        sharedKey,
+        keys.sharedKey,
         input,
     );
 
-    // 結果を返す
-    ret = {
-        iv: EncodeBase64URL(new Uint8Array(iv)),
+    // 公開鍵をエクスポート
+    const exportedPublicKey = await ConvertPublicKeyJwkToPem(
+        keys.exportedPublicKey,
+    );
+
+    return {
         enctyptedData: EncodeBase64URL(new Uint8Array(data)),
+        iv: EncodeBase64URL(new Uint8Array(iv)),
         pem: exportedPublicKey,
     };
-
-    return ret as { [key: string]: string };
 }
 
 function AppEnctyption(message: string, remotePublicKeyPem: string) {
-    EncryptEllipticPCurve(message, remotePublicKeyPem)
+    EncryptAesGcm256(message, remotePublicKeyPem)
         .then((result) => {
-            // 結果を取得して処理
             console.log(result);
             alert('Encrypted!\n' + JSON.stringify(result));
         })
         .catch((err) => {
-            // 結果を取得して処理
             alert(err);
         });
 }
