@@ -15,6 +15,10 @@ function stob(s: string): Uint8Array {
     return Uint8Array.from(s, (c) => c.charCodeAt(0));
 }
 
+function btos(b: ArrayBuffer) {
+    return String.fromCharCode(...new Uint8Array(b));
+}
+
 function ConvertPublicKeyPemToJwk(publicKeyPem: string): Uint8Array {
     const pemHeader = '-----BEGIN PUBLIC KEY-----';
     const pemFooter = '-----END PUBLIC KEY-----';
@@ -29,6 +33,19 @@ function ConvertPublicKeyPemToJwk(publicKeyPem: string): Uint8Array {
     const der = stob(atob(pemContents));
 
     return der;
+}
+
+async function ConvertPublicKeyJwkToPem(key: CryptoKey): Promise<string> {
+    const der = await crypto.subtle.exportKey('spki', key);
+    let pemContents = btoa(btos(der));
+    let pem = '-----BEGIN PUBLIC KEY-----\n';
+    while (pemContents.length > 0) {
+        pem += pemContents.substring(0, 64) + '\n';
+        pemContents = pemContents.substring(64);
+    }
+    pem += '-----END PUBLIC KEY-----\n';
+
+    return pem;
 }
 
 async function EncryptEllipticPCurve(
@@ -46,7 +63,7 @@ async function EncryptEllipticPCurve(
     let ret: { [key: string]: string } | undefined;
 
     // 鍵ペアを生成
-    keyPair = await window.crypto.subtle.generateKey(
+    keyPair = await crypto.subtle.generateKey(
         {
             name: 'ECDH',
             namedCurve: 'P-256',
@@ -56,13 +73,10 @@ async function EncryptEllipticPCurve(
     );
 
     // 公開鍵をエクスポート
-    const exportedPublicKey = await window.crypto.subtle.exportKey(
-        'jwk',
-        keyPair.publicKey,
-    );
+    const exportedPublicKey = await ConvertPublicKeyJwkToPem(keyPair.publicKey);
 
     // 外部の公開鍵をインポート
-    const importedPublicKey = await window.crypto.subtle.importKey(
+    const importedPublicKey = await crypto.subtle.importKey(
         'spki',
         ConvertPublicKeyPemToJwk(remotePublicKeyPem),
         {
@@ -74,7 +88,7 @@ async function EncryptEllipticPCurve(
     );
 
     // 共有鍵を計算
-    const sharedKey = await window.crypto.subtle.deriveKey(
+    const sharedKey = await crypto.subtle.deriveKey(
         {
             name: 'ECDH',
             public: importedPublicKey,
@@ -89,7 +103,7 @@ async function EncryptEllipticPCurve(
     );
 
     // 共有鍵(sharedKey)を使用して暗号化
-    const data = await window.crypto.subtle.encrypt(
+    const data = await crypto.subtle.encrypt(
         {
             name: 'AES-GCM',
             iv,
@@ -104,7 +118,7 @@ async function EncryptEllipticPCurve(
     ret = {
         iv: EncodeBase64URL(new Uint8Array(iv)),
         enctyptedData: EncodeBase64URL(new Uint8Array(data)),
-        jwk: JSON.stringify(exportedPublicKey),
+        pem: exportedPublicKey,
     };
 
     return ret as { [key: string]: string };
@@ -117,9 +131,9 @@ function AppEnctyption(message: string, remotePublicKeyPem: string) {
             console.log(result);
             alert('Encrypted!\n' + JSON.stringify(result));
         })
-        .catch(() => {
+        .catch((err) => {
             // 結果を取得して処理
-            alert('失敗しました');
+            alert(err);
         });
 }
 
@@ -159,10 +173,9 @@ function App() {
                         復号
                         <ol>
                             <li>
-                                開発者コンソールの jwk を browser_public_key.jwk
+                                開発者コンソールの pem を browser_public_key.pem
                                 に保存
                             </li>
-                            <li>`make jwk2pem` を実行する</li>
                             <li>
                                 python utils/decrypt.py "enctyptedData" "iv"
                                 を実行
