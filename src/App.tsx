@@ -1,23 +1,6 @@
 import { useState } from 'react';
-import reactLogo from './assets/react.svg';
-import viteLogo from '/vite.svg';
+import { Base64 } from 'js-base64';
 import './App.css';
-
-function EncodeBase64URL(data: Uint8Array): string {
-    let output = '';
-    for (let i = 0; i < data.length; i++)
-        output += String.fromCharCode(data[i]);
-
-    return btoa(output.replace(/\+/g, '-').replace(/\//g, '_'));
-}
-
-function stob(s: string): Uint8Array {
-    return Uint8Array.from(s, (c) => c.charCodeAt(0));
-}
-
-function btos(b: ArrayBuffer) {
-    return String.fromCharCode(...new Uint8Array(b));
-}
 
 function ConvertPublicKeyPemToJwk(publicKeyPem: string): Uint8Array {
     const pemHeader = '-----BEGIN PUBLIC KEY-----';
@@ -30,14 +13,14 @@ function ConvertPublicKeyPemToJwk(publicKeyPem: string): Uint8Array {
         pemHeader.length,
         publicKeyPem.length - pemFooter.length,
     );
-    const der = stob(atob(pemContents));
+    const der = Base64.toUint8Array(pemContents);
 
     return der;
 }
 
 async function ConvertPublicKeyJwkToPem(key: CryptoKey): Promise<string> {
     const der = await crypto.subtle.exportKey('spki', key);
-    let pemContents = btoa(btos(der));
+    let pemContents = Base64.fromUint8Array(new Uint8Array(der));
     let pem = '-----BEGIN PUBLIC KEY-----\n';
     while (pemContents.length > 0) {
         pem += pemContents.substring(0, 64) + '\n';
@@ -131,8 +114,8 @@ async function EncryptAesGcm256(
     );
 
     return {
-        enctyptedData: EncodeBase64URL(new Uint8Array(data)),
-        iv: EncodeBase64URL(new Uint8Array(iv)),
+        enctyptedData: Base64.fromUint8Array(new Uint8Array(data)),
+        iv: Base64.fromUint8Array(new Uint8Array(iv)),
         pem: exportedPublicKey,
     };
 }
